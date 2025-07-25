@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../utils/api';
-import { CreditCard, User, Phone, Mail, MapPin, DollarSign, Briefcase } from 'lucide-react';
+import { CreditCard, User, Phone, Mail, MapPin, DollarSign, Briefcase, IndianRupee } from 'lucide-react';
 
 const LoanApplicationForm = () => {
   const [formData, setFormData] = useState({
@@ -204,7 +204,7 @@ const LoanApplicationForm = () => {
           {/* Loan Information */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <DollarSign className="h-5 w-5 mr-2" />
+              <IndianRupee className="h-5 w-5 mr-2" />
               Loan Information
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
