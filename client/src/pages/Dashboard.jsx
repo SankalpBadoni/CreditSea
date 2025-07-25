@@ -4,7 +4,8 @@ import { apiClient } from '../utils/api';
 import Sidebar from '../components/dashboard/Sidebar';
 import DashboardStats from '../components/dashboard/DashboardStats';
 import LoanApplicationsTable from '../components/dashboard/LoanApplicationsTable';
-import { Bell, Search, Menu, X } from 'lucide-react';
+import AdminManagement from '../components/dashboard/AdminManagement';
+import { Bell, Search, Menu, X, BarChart3, FileText, Users } from 'lucide-react';
 
 const Dashboard = () => {
   const { user, isAdmin } = useAuth();
@@ -12,6 +13,7 @@ const Dashboard = () => {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
     loadDashboardData();
@@ -39,6 +41,49 @@ const Dashboard = () => {
 
   const handleStatusUpdate = () => {
     loadDashboardData();
+  };
+
+  const getTabs = () => {
+    const baseTabs = [
+      { id: 'dashboard', label: 'Overview', icon: BarChart3 },
+      { id: 'loans', label: 'Loan Applications', icon: FileText }
+    ];
+
+    if (user?.role === 'admin') {
+      baseTabs.push({ id: 'users', label: 'User Management', icon: Users });
+    }
+
+    return baseTabs;
+  };
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return (
+          <>
+            <DashboardStats stats={stats} userRole={user?.role} />
+            <div className="mt-8">
+              <LoanApplicationsTable
+                applications={applications}
+                onStatusUpdate={handleStatusUpdate}
+                userRole={user?.role}
+              />
+            </div>
+          </>
+        );
+      case 'loans':
+        return (
+          <LoanApplicationsTable
+            applications={applications}
+            onStatusUpdate={handleStatusUpdate}
+            userRole={user?.role}
+          />
+        );
+      case 'users':
+        return user?.role === 'admin' ? <AdminManagement /> : null;
+      default:
+        return null;
+    }
   };
 
   if (loading) {
@@ -117,15 +162,33 @@ const Dashboard = () => {
         <main className="flex-1 overflow-y-auto">
           <div className="py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              {/* Dashboard Stats */}
-              <DashboardStats stats={stats} userRole={user?.role} />
+              {/* Tab Navigation */}
+              <div className="mb-6">
+                <div className="border-b border-gray-200">
+                  <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                    {getTabs().map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id)}
+                          className={`${
+                            activeTab === tab.id
+                              ? 'border-green-500 text-green-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 transition-colors duration-200`}
+                        >
+                          <Icon className="h-5 w-5" />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </div>
+              </div>
 
-              {/* Loan Applications Table */}
-              <LoanApplicationsTable
-                applications={applications}
-                onStatusUpdate={handleStatusUpdate}
-                userRole={user?.role}
-              />
+              {/* Tab Content */}
+              {renderTabContent()}
             </div>
           </div>
         </main>

@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { Check, X, Eye, Clock, CheckCircle, XCircle, FileText } from 'lucide-react';
+import { Check, X, Eye, Clock, CheckCircle, XCircle, FileText, DollarSign } from 'lucide-react';
 import { apiClient } from '../../utils/api';
 
 const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
   const [loading, setLoading] = useState({});
   const [selectedApplication, setSelectedApplication] = useState(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [currentApplicationId, setCurrentApplicationId] = useState(null);
+  const [actionType, setActionType] = useState(''); // 'verify' or 'approve'
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -41,10 +45,14 @@ const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
 
     try {
       let response;
-      if (userRole === 'verifier' || (userRole === 'admin' && action === 'verify')) {
+      if (userRole === 'verifier') {
         response = await apiClient.verifyLoanApplication(applicationId, action, rejectionReason);
-      } else if (userRole === 'admin' && (action === 'approve' || action === 'reject')) {
-        response = await apiClient.approveLoanApplication(applicationId, action, rejectionReason);
+      } else if (userRole === 'admin') {
+        if (action === 'verify' || action === 'reject') {
+          response = await apiClient.verifyLoanApplication(applicationId, action, rejectionReason);
+        } else {
+          response = await apiClient.approveLoanApplication(applicationId, action, rejectionReason);
+        }
       }
 
       if (onStatusUpdate) {
@@ -56,6 +64,25 @@ const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
     } finally {
       setLoading(prev => ({ ...prev, [applicationId]: false }));
     }
+  };
+
+  const openRejectModal = (applicationId, type) => {
+    setCurrentApplicationId(applicationId);
+    setActionType(type);
+    setShowRejectModal(true);
+  };
+
+  const handleReject = async () => {
+    if (!rejectionReason.trim()) {
+      alert('Please provide a rejection reason');
+      return;
+    }
+    
+    await handleAction(currentApplicationId, 'reject', rejectionReason);
+    setShowRejectModal(false);
+    setRejectionReason('');
+    setCurrentApplicationId(null);
+    setActionType('');
   };
 
   const formatCurrency = (amount) => {
@@ -71,11 +98,29 @@ const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
     return new Date(dateString).toLocaleDateString('en-IN');
   };
 
-  if (!applications || applications.length === 0) {
+  // Show different applications based on user role
+  const getVisibleApplications = () => {
+    if (userRole === 'verifier') {
+      return applications.filter(app => app.status === 'pending');
+    } else if (userRole === 'admin') {
+      // Admin can see all applications, with priority on those needing approval
+      return applications.sort((a, b) => {
+        const priority = { verified: 1, pending: 2, approved: 3, rejected: 4 };
+        return priority[a.status] - priority[b.status];
+      });
+    }
+    return applications;
+  };
+
+  const visibleApplications = getVisibleApplications();
+
+  if (!visibleApplications || visibleApplications.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
         <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-        <p className="text-gray-500">No loan applications found</p>
+        <p className="text-gray-500">
+          {userRole === 'verifier' ? 'No pending loan applications found' : 'No loan applications found'}
+        </p>
       </div>
     );
   }
@@ -117,7 +162,7 @@ const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {applications.map((application) => (
+            {visibleApplications.map((application) => (
               <tr key={application._id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
@@ -153,64 +198,103 @@ const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center space-x-2">
-                    {/* Verifier Actions */}
+                  <div className="flex items-center justify-end space-x-2">
+                    {/* Verifier Actions - Only for pending applications */}
                     {userRole === 'verifier' && application.status === 'pending' && (
                       <>
                         <button
                           onClick={() => handleAction(application._id, 'verify')}
                           disabled={loading[application._id]}
-                          className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 disabled:opacity-50"
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 transition-colors duration-200"
                         >
-                          <Check className="h-3 w-3 mr-1" />
-                          Verify
+                          {loading[application._id] ? (
+                            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                          ) : (
+                            <>
+                              <Check className="h-3 w-3 mr-1" />
+                              Verify
+                            </>
+                          )}
                         </button>
                         <button
-                          onClick={() => {
-                            const reason = prompt('Rejection reason:');
-                            if (reason) handleAction(application._id, 'reject', reason);
-                          }}
+                          onClick={() => openRejectModal(application._id, 'verify')}
                           disabled={loading[application._id]}
-                          className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 disabled:opacity-50"
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 transition-colors duration-200"
                         >
                           <X className="h-3 w-3 mr-1" />
                           Reject
                         </button>
                       </>
                     )}
-
+                    
                     {/* Admin Actions */}
-                    {userRole === 'admin' && application.status === 'verified' && (
+                    {userRole === 'admin' && (
                       <>
-                        <button
-                          onClick={() => handleAction(application._id, 'approve')}
-                          disabled={loading[application._id]}
-                          className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 disabled:opacity-50"
-                        >
-                          <Check className="h-3 w-3 mr-1" />
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => {
-                            const reason = prompt('Rejection reason:');
-                            if (reason) handleAction(application._id, 'reject', reason);
-                          }}
-                          disabled={loading[application._id]}
-                          className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 disabled:opacity-50"
-                        >
-                          <X className="h-3 w-3 mr-1" />
-                          Reject
-                        </button>
+                        {/* Admin can verify pending applications */}
+                        {application.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleAction(application._id, 'verify')}
+                              disabled={loading[application._id]}
+                              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors duration-200"
+                            >
+                              {loading[application._id] ? (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                              ) : (
+                                <>
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Verify
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => openRejectModal(application._id, 'verify')}
+                              disabled={loading[application._id]}
+                              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 transition-colors duration-200"
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        
+                        {/* Admin can approve verified applications */}
+                        {application.status === 'verified' && (
+                          <>
+                            <button
+                              onClick={() => handleAction(application._id, 'approve')}
+                              disabled={loading[application._id]}
+                              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 transition-colors duration-200"
+                            >
+                              {loading[application._id] ? (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                              ) : (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Approve Loan
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => openRejectModal(application._id, 'approve')}
+                              disabled={loading[application._id]}
+                              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 transition-colors duration-200"
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Reject
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
 
-                    {/* View Details Button */}
+                    {/* View Details Button - Available for all roles */}
                     <button
                       onClick={() => setSelectedApplication(application)}
-                      className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700"
+                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                     >
                       <Eye className="h-3 w-3 mr-1" />
-                      View
+                      View Details
                     </button>
                   </div>
                 </td>
@@ -285,6 +369,68 @@ const LoanApplicationsTable = ({ applications, onStatusUpdate, userRole }) => {
                     <p className="mt-1 text-sm text-red-600">{selectedApplication.rejectionReason}</p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 lg:w-1/3 shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900">
+                  {actionType === 'verify' ? 'Reject Application' : 'Reject Loan'}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowRejectModal(false);
+                    setRejectionReason('');
+                    setCurrentApplicationId(null);
+                    setActionType('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Please provide a reason for rejection:
+                  </label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    rows={4}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter rejection reason..."
+                  />
+                </div>
+                
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowRejectModal(false);
+                      setRejectionReason('');
+                      setCurrentApplicationId(null);
+                      setActionType('');
+                    }}
+                    className="px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReject}
+                    disabled={!rejectionReason.trim()}
+                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Reject {actionType === 'verify' ? 'Application' : 'Loan'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
